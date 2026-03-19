@@ -1,7 +1,7 @@
 streamlit==1.40.0
-opencv-python
+opencv-python-headless
 pandas
-numpy
+numpy<2.3
 pyyaml
 scipy
 matplotlib
