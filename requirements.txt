@@ -1,0 +1,10 @@
+streamlit==1.40.0
+opencv-python
+pandas
+numpy
+pyyaml
+scipy
+matplotlib
+streamlit-image-coordinates
+streamlit-drawable-canvas
+Pillow

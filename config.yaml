@@ -1,0 +1,53 @@
+targets:
+  ITS:
+    y0_ratio: 0.10
+    y1_ratio: 0.90
+  16S:
+    y0_ratio: 0.10
+    y1_ratio: 0.90
+
+rows_to_split: 4
+lane_count_per_row: 26
+lane_half_width_px: 18
+
+bg_subtract_ksize: 51
+
+# 1000bp 경계
+its_below_1000_margin_px: 11
+classification_dead_zone_px: 7
+
+# Ladder lane
+ladder_lanes: [9, 18]
+
+# band 탐색 범위
+detect_top_ignore_ratio: 0.08
+detect_bottom_ignore_ratio: 0.05
+
+band_search_16s_up_px: 38
+band_search_16s_down_px: 16
+
+band_search_its_down_start_px: 12
+band_search_its_down_end_px: 108
+
+band_search_fallback_up_px: 52
+band_search_fallback_down_px: 135
+
+# row 기준 하드 제한
+its_max_row_ratio: 0.68
+fallback_max_row_ratio: 0.72
+
+# 채택 기준
+no_band_score_threshold: 0.008
+profile_fallback_z_threshold: 0.82
+profile_fallback_z_threshold_its: 0.66
+fallback_min_score: 0.016
+fallback_min_strength: 3500
+
+# 최소 band 강도
+min_detect_strength_16s: 1600
+min_detect_strength_its: 2400
+
+# lane 중심성 기준
+min_center_enrichment_main: 2.8
+min_center_enrichment_retry: 1.4
+min_center_enrichment_fallback: 1.2
