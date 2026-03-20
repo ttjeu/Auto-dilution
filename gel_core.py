@@ -738,61 +738,28 @@ def normalize_strength_by_row(df: pd.DataFrame) -> pd.DataFrame:
         return out
 
     out["band_strength_norm"] = 0.0
-    out["band_strength_global_norm"] = 0.0
-    out["band_strength_hybrid_norm"] = 0.0
 
-    strength_series = pd.to_numeric(out.get("band_integral", 0), errors="coerce").fillna(0.0)
-
-    # row 내부 비교값
     for row_num in sorted(out["row"].dropna().unique()):
         mask = (
             (out["row"] == row_num) &
             (out["target"] != "LADDER") &
             (out["target"] != "UNK") &
-            (strength_series > 0)
+            (pd.to_numeric(out["band_integral"], errors="coerce") > 0)
         )
 
         vals = pd.to_numeric(out.loc[mask, "band_integral"], errors="coerce").dropna().values
         if len(vals) == 0:
             continue
 
-        vals_log = np.log1p(vals.astype(float))
-        ref = float(np.percentile(vals_log, 85))
+        # 극단치 영향 완화
+        ref = float(np.percentile(vals, 90))
         if ref <= 1e-6:
-            ref = float(np.max(vals_log)) if len(vals_log) > 0 else 1.0
+            ref = float(np.max(vals)) if len(vals) > 0 else 1.0
         ref = max(ref, 1.0)
 
         out.loc[mask, "band_strength_norm"] = (
-            np.log1p(pd.to_numeric(out.loc[mask, "band_integral"], errors="coerce").clip(lower=0.0)) / ref
-        ).clip(lower=0.0, upper=1.8)
-
-    # target별 전역 비교값
-    for target in ["16S", "ITS"]:
-        mask = (
-            (out["target"] == target) &
-            (pd.to_numeric(out["band_integral"], errors="coerce") > 0)
-        )
-        vals = pd.to_numeric(out.loc[mask, "band_integral"], errors="coerce").dropna().values
-        if len(vals) == 0:
-            continue
-
-        vals_log = np.log1p(vals.astype(float))
-        lo = float(np.percentile(vals_log, 10))
-        hi = float(np.percentile(vals_log, 90))
-        if hi - lo < 1e-6:
-            hi = lo + 1.0
-
-        global_norm = (
-            (np.log1p(pd.to_numeric(out.loc[mask, "band_integral"], errors="coerce").clip(lower=0.0)) - lo) / (hi - lo)
-        ).clip(lower=0.0, upper=1.6)
-        out.loc[mask, "band_strength_global_norm"] = global_norm
-
-        row_norm_vals = pd.to_numeric(out.loc[mask, "band_strength_norm"], errors="coerce").fillna(0.0)
-        if target == "16S":
-            hybrid = 0.35 * row_norm_vals + 0.65 * global_norm
-        else:
-            hybrid = 0.55 * row_norm_vals + 0.45 * global_norm
-        out.loc[mask, "band_strength_hybrid_norm"] = hybrid.clip(lower=0.0, upper=1.8)
+            pd.to_numeric(out.loc[mask, "band_integral"], errors="coerce") / ref
+        ).clip(lower=0.0, upper=2.0)
 
     return out
 
@@ -808,62 +775,52 @@ def refine_recommendation_by_row(df: pd.DataFrame) -> pd.DataFrame:
             continue
 
         norm = float(r.get("band_strength_norm", 0.0))
-        global_norm = float(r.get("band_strength_global_norm", 0.0))
-        hybrid_norm = float(r.get("band_strength_hybrid_norm", norm))
         strength = float(r.get("band_integral", 0.0))
 
         if target == "16S":
-            # 16S는 row 내부 상대비보다 절대 밝기를 더 강하게 반영한다.
-            score = max(hybrid_norm, 0.45 * norm + 0.55 * global_norm)
-            if score >= 1.08:
+            if norm >= 0.78:
                 rec = "3"
-            elif score >= 0.50:
+            elif norm >= 0.52:
                 rec = "2"
-            elif score >= 0.22:
+            elif norm >= 0.24:
                 rec = "1"
-            elif score > 0:
+            elif norm > 0:
                 rec = "0"
             else:
                 rec = "X"
 
-            # 절대강도 강등은 완화하고, 강한 밴드는 적극적으로 3으로 올린다.
-            if strength < 6500:
+            # 절대강도 기반 상한
+            if strength < 6000:
                 rec = "0" if rec != "X" else "X"
-            elif strength < 10000 and rec in ["3", "2"]:
-                rec = "1"
-            elif strength < 14000 and rec == "3":
+            elif strength < 12000 and rec == "3":
                 rec = "2"
-            elif strength >= 16500 and rec == "2":
-                rec = "3"
-            elif strength >= 21000:
-                rec = "3"
 
         elif target == "ITS":
-            # ITS는 기존 상향 경향을 유지한다.
-            score = max(hybrid_norm, 0.65 * norm + 0.35 * global_norm)
-            if score >= 1.24:
+            if norm >= 1.28:
                 rec = "20"
-            elif score >= 1.02:
+            elif norm >= 1.10:
                 rec = "18"
-            elif score >= 0.82:
+            elif norm >= 0.94:
                 rec = "16"
-            elif score >= 0.62:
+            elif norm >= 0.78:
                 rec = "14"
-            elif score >= 0.42:
+            elif norm >= 0.60:
                 rec = "12"
-            elif score >= 0.22:
+            elif norm >= 0.42:
                 rec = "10"
-            elif score > 0:
+            elif norm >= 0.26:
                 rec = "8"
+            elif norm > 0:
+                rec = "6"
             else:
                 rec = "X"
 
-            if strength < 9000:
-                rec = "10" if rec != "X" else "X"
-            elif strength < 13500 and rec in ["20", "18", "16"]:
+            if strength < 8500:
+                rec = "6" if rec != "X" else "X"
+            elif strength < 13000 and rec in ["20", "18", "16"]:
+                rec = "12"
+            elif strength < 17000 and rec == "20":
                 rec = "16"
-            elif strength < 17500 and rec == "20":
-                rec = "18"
 
         else:
             rec = str(r.get("recommend", "X"))
