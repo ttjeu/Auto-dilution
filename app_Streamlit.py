@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from PIL import Image
-from streamlit_drawable_canvas import st_canvas
+from streamlit_image_coordinates import streamlit_image_coordinates
 
 from gel_core import analyze_gel, overlay_results, load_config
 
@@ -198,51 +198,44 @@ try:
     col1, col2 = st.columns([1.35, 0.65])
 
     with col1:
-        st.subheader("원본 이미지 + 저장된 1000bp 선")
-        st.write(f"현재 선택 Row: {selected_row}")
-        st.write("이미지 위에 직선을 하나 그린 뒤, 왼쪽의 저장 버튼을 누르세요.")
-        st.write("선은 반드시 선택한 Row 안에 그려야 합니다.")
+    st.subheader("원본 이미지 + 저장된 1000bp 선")
+    st.write(f"현재 선택 Row: {selected_row}")
+    st.write("이미지에서 원하는 1000bp 위치를 클릭하세요.")
+    st.write("클릭한 y좌표를 선택한 Row의 anchor로 저장합니다.")
 
-        canvas_result = st_canvas(
-            fill_color="rgba(255, 255, 0, 0.0)",
-            stroke_width=3,
-            stroke_color="#FFFF00",
-            background_image=display_pil,
-            update_streamlit=True,
-            height=canvas_h,
-            width=canvas_w,
-            drawing_mode="line",
-            point_display_radius=0,
-            display_toolbar=False,
-            key=f"canvas_row_{selected_row}_{uploaded_file.name}",
-        )
+    clicked = streamlit_image_coordinates(
+        display_pil,
+        key=f"img_coord_{selected_row}_{uploaded_file.name}"
+    )
 
-        latest_y = extract_latest_line_y(
-            canvas_result,
-            selected_row,
-            row_h,
-            display_scale=display_scale
-        )
+    latest_y = None
 
-        if latest_y is not None:
-            st.info(f"현재 그린 선의 선택 Row 내부 y값: {latest_y:.1f}px")
+    if clicked is not None:
+        clicked_x = clicked["x"]
+        clicked_y_display = clicked["y"]
+
+        y_abs_original = clicked_y_display / max(display_scale, 1e-6)
+
+        row_y0 = (selected_row - 1) * row_h
+        row_y1 = selected_row * row_h
+
+        if row_y0 <= y_abs_original < row_y1:
+            latest_y = y_abs_original - row_y0
+            st.info(f"현재 선택 Row 내부 y값: {latest_y:.1f}px")
         else:
-            st.info("아직 선택 Row 안에 저장 가능한 선이 없습니다.")
+            st.warning("선택한 Row 영역 안을 클릭하세요.")
 
-        if save_line_button:
-            if latest_y is None:
-                st.warning("선택한 Row 안에 직선을 먼저 그려주세요.")
-            else:
-                st.session_state.anchor_store[selected_row] = {
-                    "enabled": True,
-                    "lane": default_lane,
-                    "y": float(latest_y),
-                }
-                st.success(
-                    f"Row {selected_row}의 1000bp가 저장되었습니다. "
-                    f"(y_in_row={latest_y:.1f})"
-                )
-                st.rerun()
+    if save_line_button:
+        if latest_y is None:
+            st.warning("먼저 이미지에서 선택한 Row 내부를 클릭하세요.")
+        else:
+            st.session_state.anchor_store[selected_row] = {
+                "enabled": True,
+                "lane": default_lane,
+                "y": float(latest_y),
+            }
+            st.success(f"Row {selected_row}의 1000bp가 저장되었습니다. (y_in_row={latest_y:.1f})")
+            st.rerun()
 
     with col2:
         st.subheader("입력 정보")
