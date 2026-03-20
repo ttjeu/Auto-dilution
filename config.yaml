@@ -12,9 +12,18 @@ lane_half_width_px: 18
 
 bg_subtract_ksize: 51
 
+# 입력 이미지 밝기/대비 자동 표준화
+pre_norm_low_percentile: 8.0
+pre_norm_high_percentile: 99.4
+pre_norm_mid_percentile: 75.0
+pre_norm_target_mid: 0.36
+pre_norm_gamma_min: 0.70
+pre_norm_gamma_max: 1.55
+pre_norm_highlight_compress: 0.92
+
 # 1000bp 경계
-its_below_1000_margin_px: 11
-classification_dead_zone_px: 7
+its_below_1000_margin_px: 2
+classification_dead_zone_px: 2
 
 # Ladder lane
 ladder_lanes: [9, 18]
@@ -24,30 +33,42 @@ detect_top_ignore_ratio: 0.08
 detect_bottom_ignore_ratio: 0.05
 
 band_search_16s_up_px: 38
-band_search_16s_down_px: 16
+band_search_16s_down_px: 0
 
-band_search_its_down_start_px: 12
-band_search_its_down_end_px: 108
+band_search_its_down_start_px: 2
+band_search_its_down_end_px: 138
 
-band_search_fallback_up_px: 52
-band_search_fallback_down_px: 135
+band_search_fallback_up_px: 70
+band_search_fallback_down_px: 210
 
 # row 기준 하드 제한
-its_max_row_ratio: 0.68
-fallback_max_row_ratio: 0.72
+its_max_row_ratio: 0.80
+fallback_max_row_ratio: 0.88
 
 # 채택 기준
 no_band_score_threshold: 0.008
 profile_fallback_z_threshold: 0.82
-profile_fallback_z_threshold_its: 0.66
+profile_fallback_z_threshold_its: 0.62
 fallback_min_score: 0.016
-fallback_min_strength: 3500
+fallback_min_score_its: 0.010
+fallback_min_strength: 3600
+fallback_min_strength_its: 1900
 
 # 최소 band 강도
-min_detect_strength_16s: 1600
-min_detect_strength_its: 2400
+min_detect_strength_16s: 1500
+min_detect_strength_its: 1200
 
 # lane 중심성 기준
-min_center_enrichment_main: 2.8
-min_center_enrichment_retry: 1.4
-min_center_enrichment_fallback: 1.2
+min_center_enrichment_main: 1.6
+min_center_enrichment_retry: 0.7
+min_center_enrichment_fallback: 0.55
+band_search_fallback_16s_down_px: 0
+band_search_fallback_its_start_px: 8
+band_search_its_aggressive_start_px: 1
+band_search_its_aggressive_end_px: 176
+rescue_min_score: 0.012
+rescue_min_score_its: 0.008
+rescue_min_strength: 3000
+rescue_min_strength_its: 1500
+min_center_enrichment_rescue: 0.45
+lane_recenter_radius_px: 10

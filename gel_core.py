@@ -494,22 +494,27 @@ def detect_band_multi_pass(
         min(valid_bottom, its_max_row, int(y1000_at_lane + float(cfg.get("band_search_its_down_end_px", 98))))
     )
 
-    search_fallback = (
+    search_fallback_16s = (
         max(valid_top, int(y1000_at_lane - float(cfg.get("band_search_fallback_up_px", 52)))),
+        min(valid_bottom, int(y1000_at_lane + float(cfg.get("band_search_fallback_16s_down_px", 0))))
+    )
+
+    search_fallback_its = (
+        max(valid_top, int(y1000_at_lane + float(cfg.get("band_search_fallback_its_start_px", 0)))),
         min(valid_bottom, fallback_max_row, int(y1000_at_lane + float(cfg.get("band_search_fallback_down_px", 125))))
     )
 
     if target_mode == "16S":
-        target_candidates = [("16S", [search_16s])]
+        target_candidates = [("16S", [search_16s], [search_fallback_16s])]
     elif target_mode == "ITS":
-        target_candidates = [("ITS", [search_its])]
+        target_candidates = [("ITS", [search_its], [search_fallback_its])]
     else:
-        target_candidates = [("16S", [search_16s]), ("ITS", [search_its])]
+        target_candidates = [("16S", [search_16s], [search_fallback_16s]), ("ITS", [search_its], [search_fallback_its])]
 
     best = None
     best_score = -1.0
 
-    for dx in [0, -2, 2, -4, 4]:
+    for dx in [0, -2, 2, -4, 4, -6, 6, -8, 8]:
         cx_try = int(cx + dx)
         x0 = max(0, cx_try - half_w)
         x1 = min(gray_width, cx_try + half_w)
@@ -518,7 +523,7 @@ def detect_band_multi_pass(
         if lane_img.size == 0:
             continue
 
-        for target_name, search_ranges in target_candidates:
+        for target_name, search_ranges, fallback_ranges in target_candidates:
             rel_x, rel_y, _, score = detect_band_2d(
                 lane_img,
                 search_ranges=search_ranges,
@@ -530,7 +535,7 @@ def detect_band_multi_pass(
             if np.isnan(rel_y):
                 rel_x, rel_y, _, score = detect_band_2d(
                     lane_img,
-                    search_ranges=[search_fallback],
+                    search_ranges=fallback_ranges,
                     retry=True,
                     cfg=cfg
                 )
@@ -539,7 +544,7 @@ def detect_band_multi_pass(
             if np.isnan(rel_y):
                 rel_x, rel_y, _, score = detect_band_profile_fallback(
                     lane_img,
-                    search_ranges=[search_fallback],
+                    search_ranges=fallback_ranges,
                     z_threshold=float(cfg.get("profile_fallback_z_threshold", 0.82)),
                     cfg=cfg
                 )
@@ -550,12 +555,29 @@ def detect_band_multi_pass(
 
             strength = quantify_band_strength(lane_img, rel_y)
 
-            # fallback은 더 엄격하게 채택
             if method == "fallback":
-                if score < float(cfg.get("fallback_min_score", 0.020)):
-                    continue
-                if strength < float(cfg.get("fallback_min_strength", 4500)):
-                    continue
+                if target_name == "ITS":
+                    if score < float(cfg.get("fallback_min_score_its", cfg.get("fallback_min_score", 0.020))):
+                        continue
+                    if strength < float(cfg.get("fallback_min_strength_its", cfg.get("fallback_min_strength", 4500))):
+                        continue
+                else:
+                    if score < float(cfg.get("fallback_min_score", 0.020)):
+                        continue
+                    if strength < float(cfg.get("fallback_min_strength", 4500)):
+                        continue
+
+            if method == "rescue":
+                if target_name == "ITS":
+                    if score < float(cfg.get("rescue_min_score_its", cfg.get("rescue_min_score", 0.010))):
+                        continue
+                    if strength < float(cfg.get("rescue_min_strength_its", cfg.get("rescue_min_strength", 2200))):
+                        continue
+                else:
+                    if score < float(cfg.get("rescue_min_score", 0.010)):
+                        continue
+                    if strength < float(cfg.get("rescue_min_strength", 2200)):
+                        continue
 
             # target별 최소 강도
             if target_name == "16S" and strength < float(cfg.get("min_detect_strength_16s", 2500)):
@@ -563,18 +585,20 @@ def detect_band_multi_pass(
             if target_name == "ITS" and strength < float(cfg.get("min_detect_strength_its", 3200)):
                 continue
 
-            combined_score = score_target_candidate(
-                rel_y=rel_y,
-                y1000_at_lane=y1000_at_lane,
-                strength=strength,
-                score=score,
-                target_name=target_name,
-                cfg=cfg
-            )
+            final_target = target_name
+            if target_mode == "AUTO":
+                final_target = "16S" if float(rel_y) <= float(y1000_at_lane) else "ITS"
+                if final_target != target_name:
+                    continue
+
+            combined_score = float(strength) + float(score) * 15000.0
+            if target_name == "ITS":
+                dist_below = max(0.0, float(rel_y) - float(y1000_at_lane))
+                combined_score += min(1200.0, dist_below * 40.0)
 
             if combined_score > best_score:
                 best_score = combined_score
-                best = (x0 + rel_x, rel_y, strength, score, cx_try, target_name, method)
+                best = (x0 + rel_x, rel_y, strength, score, cx_try, final_target, method)
 
     if best is None:
         return float("nan"), float("nan"), 0.0, 0.0, cx, "UNK", "none"
@@ -670,7 +694,7 @@ def analyze_gel(
         for lane_idx, cx in enumerate(centers, start=1):
             x0, x1 = max(0, cx - half_w), min(gray.shape[1], cx + half_w)
 
-            if target_mode == "AUTO" and lane_idx in fixed_ladder_lanes:
+            if lane_idx in fixed_ladder_lanes:
                 y1000_at_lane = a_1000 * float(cx) + b_1000
                 results.append({
                     "row": r_idx + 1,
@@ -778,55 +802,49 @@ def refine_recommendation_by_row(df: pd.DataFrame) -> pd.DataFrame:
         strength = float(r.get("band_integral", 0.0))
 
         if target == "16S":
-            # 16S는 1~3 단계 차이가 더 분명하게 나도록 상단 기준을 올리고,
-            # 상대적으로 약한 Row 4 대역은 2로 내려오게 조정
-            if norm >= 0.92:
+            if norm >= 0.78:
                 rec = "3"
-            elif norm >= 0.38:
+            elif norm >= 0.52:
                 rec = "2"
-            elif norm >= 0.18:
+            elif norm >= 0.24:
                 rec = "1"
             elif norm > 0:
                 rec = "0"
             else:
                 rec = "X"
 
-            # 절대강도 기반 상한을 더 강하게 적용해서
-            # 아주 강한 밴드만 3으로 유지되도록 조정
-            if strength < 6500:
+            # 절대강도 기반 상한
+            if strength < 6000:
                 rec = "0" if rec != "X" else "X"
-            elif strength < 10500 and rec in ["3", "2"]:
-                rec = "1"
-            elif strength < 14500 and rec == "3":
+            elif strength < 12000 and rec == "3":
                 rec = "2"
 
         elif target == "ITS":
-            # ITS는 전반적으로 희석배수가 4 정도 더 높게 나오도록 한 단계 상향
             if norm >= 1.28:
                 rec = "20"
             elif norm >= 1.10:
-                rec = "20"
-            elif norm >= 0.94:
                 rec = "18"
-            elif norm >= 0.78:
+            elif norm >= 0.94:
                 rec = "16"
-            elif norm >= 0.60:
+            elif norm >= 0.78:
                 rec = "14"
-            elif norm >= 0.42:
+            elif norm >= 0.60:
                 rec = "12"
-            elif norm >= 0.26:
+            elif norm >= 0.42:
                 rec = "10"
-            elif norm > 0:
+            elif norm >= 0.26:
                 rec = "8"
+            elif norm > 0:
+                rec = "6"
             else:
                 rec = "X"
 
             if strength < 8500:
-                rec = "8" if rec != "X" else "X"
+                rec = "6" if rec != "X" else "X"
             elif strength < 13000 and rec in ["20", "18", "16"]:
-                rec = "14"
+                rec = "12"
             elif strength < 17000 and rec == "20":
-                rec = "18"
+                rec = "16"
 
         else:
             rec = str(r.get("recommend", "X"))
@@ -887,7 +905,10 @@ def overlay_results(color_img: np.ndarray, df: pd.DataFrame) -> np.ndarray:
         (tw, th), baseline = cv2.getTextSize(label_text, font, font_scale, thickness)
 
         tx = max(5, cx - tw // 2)
-        ty = max(th + 12, cy - 18)
+        if target == "ITS":
+            ty = min(img.shape[0] - baseline - 10, cy + th + 38)
+        else:
+            ty = max(th + 12, cy - 18)
 
         box_x0 = max(0, tx - 8)
         box_y0 = max(0, ty - th - 8)
